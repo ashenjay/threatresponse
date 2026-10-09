@@ -9,22 +9,29 @@
   },
   "targets": [
     {
-      "name": "SMSGateway (AWS / ECS)",
+      "name": "SMSGateway",
+      "role": "edge",
+      "platform": "AWS (ECS / App Runner)",
+      "profile": "gateway",
       "host": "REPLACE-ME.ndblk.int",
       "port": 443,
       "servername": "REPLACE-ME.ndblk.int",
       "health": { "type": "https", "port": 443, "path": "/SMSGateway/actuator/health" },
+      "truststore": "/certs/dialog-truststore.jks",
+      "upstream": { "name": "Dialog SMS API", "host": "esms.dialog.lk", "port": 443, "servername": "esms.dialog.lk" },
       "bundledCerts": []
     },
     {
-      "name": "NDBSMSRouter (K8s / TKG)",
-      "host": "ndbsmsrouter.ndblk.int",
+      "name": "NDBSMSRouter",
+      "role": "internal",
+      "platform": "On-prem TKG (Kubernetes / Tanzu)",
+      "profile": "router",
+      "host": "ndbsmsrouter.sms.svc.cluster.local",
       "port": 8085,
       "servername": "ndbsmsrouter.ndblk.int",
       "health": { "type": "http", "port": 8085, "path": "/actuator/health" },
-      "bundledCerts": [
-        "/certs/dialog.lk.crt"
-      ]
+      "truststore": null,
+      "bundledCerts": []
     }
   ]
 }

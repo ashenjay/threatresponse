@@ -19,10 +19,19 @@ const path = require('path');
 const { loadConfig } = require('./config');
 const { probeLiveCert, readBundledCert } = require('./certCheck');
 const { checkHealth } = require('./healthCheck');
+const { summariseTruststore } = require('./jks');
 const { sendAlerts } = require('./alert');
 
 const cfg = loadConfig();
 const PORT = Number(process.env.PORT || 8080);
+
+function statusOf(days, c) {
+  if (days === null || days === undefined) return 'unknown';
+  if (days < 0) return 'expired';
+  if (days <= c.criticalDays) return 'critical';
+  if (days <= c.warnDays) return 'warning';
+  return 'ok';
+}
 
 let snapshot = { generatedAt: null, targets: [] };
 let refreshing = false;
@@ -33,15 +42,22 @@ async function refresh() {
   const thresholds = { warnDays: cfg.warnDays, criticalDays: cfg.criticalDays };
   try {
     const results = await Promise.all(cfg.targets.map(async (t) => {
-      const [cert, health] = await Promise.all([
+      const [cert, health, upstream] = await Promise.all([
         probeLiveCert(t, thresholds),
         checkHealth(t),
+        t.upstream ? probeLiveCert(t.upstream, thresholds) : Promise.resolve(null),
       ]);
       const bundled = (t.bundledCerts || []).map((p) => readBundledCert(p, thresholds));
-      return { name: t.name, host: t.host, port: t.port, cert, health, bundled };
+      const truststore = t.truststore ? summariseTruststore(t.truststore, thresholds) : null;
+      return {
+        name: t.name, role: t.role || 'internal', platform: t.platform || null,
+        host: t.host, port: t.port,
+        cert, health, bundled, truststore,
+        upstream: upstream ? { name: t.upstream.name, host: t.upstream.host, port: t.upstream.port, cert: upstream } : null,
+      };
     }));
 
-    snapshot = { generatedAt: new Date().toISOString(), warnDays: cfg.warnDays, criticalDays: cfg.criticalDays, targets: results };
+    snapshot = { generatedAt: new Date().toISOString(), profile: cfg.profile, warnDays: cfg.warnDays, criticalDays: cfg.criticalDays, targets: results };
 
     // Collect alert-worthy problems.
     const problems = [];
@@ -58,6 +74,26 @@ async function refresh() {
           key: `health:${r.name}`,
           subject: `${r.name} is DOWN`,
           body: `${r.host} health check failed: ${r.health.error || 'no response'}.`,
+        });
+      }
+      // Truststore entries nearing expiry (e.g. the Dialog leaf in the gateway JKS).
+      if (r.truststore && r.truststore.entries) {
+        for (const e of r.truststore.entries) {
+          if (['expired', 'critical'].includes(statusOf(e.daysRemaining, cfg))) {
+            problems.push({
+              key: `jks:${r.name}:${e.alias}`,
+              subject: `${r.name} truststore '${e.alias}' (${e.cn}) ${e.daysRemaining}d`,
+              body: `JKS ${r.truststore.file} alias '${e.alias}' CN=${e.cn} expires ${e.validTo} (${e.daysRemaining} days). Rotate per runbook — no image rebuild needed.`,
+            });
+          }
+        }
+      }
+      // Upstream (Dialog) cert the gateway must trust.
+      if (r.upstream && r.upstream.cert && ['expired', 'critical'].includes(r.upstream.cert.status)) {
+        problems.push({
+          key: `upstream:${r.name}`,
+          subject: `${r.upstream.name} cert ${r.upstream.cert.status} (${r.upstream.cert.daysRemaining}d)`,
+          body: `${r.upstream.host} serves a cert expiring ${r.upstream.cert.validTo}. Ensure the matching leaf is in ${r.name}'s truststore.`,
         });
       }
     }

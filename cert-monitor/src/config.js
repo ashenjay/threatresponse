@@ -31,7 +31,12 @@ const DEFAULTS = {
   },
   targets: [
     {
-      name: 'SMSGateway (AWS)',
+      name: 'SMSGateway',
+      // 'edge' services are the public TLS front door AND an outbound TLS
+      // client to Dialog — so their key concern is the JKS truststore.
+      role: 'edge',
+      platform: 'AWS (ECS / App Runner)',
+      profile: 'gateway',
       // The host whose live TLS cert we probe. Override via env for prod.
       host: 'ndbsms-uat.ndblk.int',
       port: 443,
@@ -39,15 +44,25 @@ const DEFAULTS = {
       servername: 'ndbsms-uat.ndblk.int',
       // Health endpoint. type 'http'|'https'|'tcp'. 'none' skips health.
       health: { type: 'https', port: 443, path: '/SMSGateway/actuator/health' },
-      // Optional: PEM file(s) mounted into the monitor to report bundled expiry.
+      // The JKS truststore the gateway uses to trust Dialog. Mount it into the
+      // monitor read-only and point here to see its entries + expiry in the UI.
+      truststore: null, // e.g. '/certs/dialog-truststore.jks'
+      // The upstream the gateway must trust (Dialog). We probe its live cert;
+      // that leaf must be present/valid in the truststore above.
+      upstream: { name: 'Dialog SMS API', host: 'esms.dialog.lk', port: 443, servername: 'esms.dialog.lk' },
       bundledCerts: [],
     },
     {
-      name: 'NDBSMSRouter (K8s)',
+      name: 'NDBSMSRouter',
+      role: 'internal',
+      platform: 'On-prem TKG (Kubernetes / Tanzu)',
+      profile: 'router',
+      // In-cluster the monitor should target the Service DNS, not an ingress.
       host: 'ndbsmsrouter.ndblk.int',
       port: 8085,
       servername: 'ndbsmsrouter.ndblk.int',
       health: { type: 'http', port: 8085, path: '/actuator/health' },
+      truststore: null,
       bundledCerts: [],
     },
   ],
@@ -75,6 +90,14 @@ function loadConfig() {
   if (process.env.WARN_DAYS) cfg.warnDays = Number(process.env.WARN_DAYS);
   if (process.env.CRITICAL_DAYS) cfg.criticalDays = Number(process.env.CRITICAL_DAYS);
   if (process.env.ALERT_ENABLED) cfg.alert.enabled = process.env.ALERT_ENABLED === 'true';
+
+  // Run the two services SEPARATELY: MONITOR_PROFILE=gateway|router runs just
+  // that one (deploy one instance per environment). Default 'all' shows both.
+  const profile = (process.env.MONITOR_PROFILE || 'all').toLowerCase();
+  if (profile !== 'all') {
+    cfg.targets = cfg.targets.filter((t) => (t.profile || '').toLowerCase() === profile);
+  }
+  cfg.profile = profile;
 
   return cfg;
 }

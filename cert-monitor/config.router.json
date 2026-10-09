@@ -1,0 +1,21 @@
+{
+  "_comment": "NDBSMSRouter (internal) only. Run with MONITOR_PROFILE=router, or use this file directly. In-cluster, target the Service DNS, not an ingress. No secrets belong here.",
+  "refreshSeconds": 300,
+  "warnDays": 30,
+  "criticalDays": 7,
+  "alert": { "enabled": false, "throttleHours": 12 },
+  "targets": [
+    {
+      "name": "NDBSMSRouter",
+      "role": "internal",
+      "platform": "On-prem TKG (Kubernetes / Tanzu)",
+      "profile": "router",
+      "host": "ndbsmsrouter.sms.svc.cluster.local",
+      "port": 8085,
+      "servername": "ndbsmsrouter.ndblk.int",
+      "health": { "type": "http", "port": 8085, "path": "/actuator/health" },
+      "truststore": null,
+      "bundledCerts": []
+    }
+  ]
+}

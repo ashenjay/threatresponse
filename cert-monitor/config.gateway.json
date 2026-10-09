@@ -1,0 +1,22 @@
+{
+  "_comment": "SMSGateway (edge) only. Run with MONITOR_PROFILE=gateway, or use this file directly. Mount the Dialog truststore read-only into the monitor and set 'truststore' to its path so the UI shows its entries + expiry. No secrets belong here.",
+  "refreshSeconds": 300,
+  "warnDays": 30,
+  "criticalDays": 7,
+  "alert": { "enabled": false, "throttleHours": 12 },
+  "targets": [
+    {
+      "name": "SMSGateway",
+      "role": "edge",
+      "platform": "AWS (ECS / App Runner)",
+      "profile": "gateway",
+      "host": "ndbsms-uat.ndblk.int",
+      "port": 443,
+      "servername": "ndbsms-uat.ndblk.int",
+      "health": { "type": "https", "port": 443, "path": "/SMSGateway/actuator/health" },
+      "truststore": "/certs/dialog-truststore.jks",
+      "upstream": { "name": "Dialog SMS API", "host": "esms.dialog.lk", "port": 443, "servername": "esms.dialog.lk" },
+      "bundledCerts": []
+    }
+  ]
+}
