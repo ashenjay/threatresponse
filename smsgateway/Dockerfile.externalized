@@ -1,0 +1,49 @@
+# =============================================================================
+# SMSGateway — externalized-truststore build.
+#
+# WHY THIS EXISTS
+# ---------------
+# The original Dockerfile imported the Dialog + wildcard certs into the JVM's
+# cacerts at BUILD time (keytool -importcert ... $JAVA_HOME/.../cacerts).
+# Consequence: rotating ANY cert meant rebuilding and redeploying the image.
+# The Dialog leaf cert expires 2026-12-14, so that pain is imminent.
+#
+# This version bakes NOTHING cert-related. The truststore is supplied at RUN
+# time from a mounted file, and the JVM is pointed at it. To rotate a cert you
+# replace the mounted file and restart the task/pod — no image rebuild.
+#
+# The app already uses a custom JKS truststore (RestTemplateConfig ->
+# loadTrustMaterial(trustStore, null)), so we simply make that JKS an
+# external, mounted file instead of an image layer.
+# =============================================================================
+
+FROM eclipse-temurin:17-jre-alpine
+
+WORKDIR /app
+
+# Only the application jar goes into the image. No certs.
+COPY target6/SMSGateway.jar app.jar
+
+# Path where the truststore is expected at runtime. Mount your JKS here:
+#   - ECS:  via an EFS volume mounted at /app/config
+#   - K8s:  via a Secret volume mounted at /app/config
+# Nothing is copied in at build time, so the image carries no secrets/certs.
+ENV TRUSTSTORE_PATH=/app/config/dialog-truststore.jks
+ENV TRUSTSTORE_PASS=changeit
+
+EXPOSE 8086
+ENV JAVA_OPTS="-Xms256m -Xmx512m"
+
+# Point BOTH the JVM default truststore and the app's custom truststore at the
+# mounted file. If the app reads the path from application.yaml instead, set it
+# there to ${TRUSTSTORE_PATH} and this still works as a sane default.
+ENTRYPOINT ["sh", "-c", "\
+  if [ ! -f \"$TRUSTSTORE_PATH\" ]; then \
+    echo \"FATAL: truststore not found at $TRUSTSTORE_PATH — mount it (EFS on ECS, Secret on K8s).\" >&2; exit 1; \
+  fi; \
+  echo \"Using truststore: $TRUSTSTORE_PATH\"; \
+  exec java $JAVA_OPTS \
+    -Djavax.net.ssl.trustStore=\"$TRUSTSTORE_PATH\" \
+    -Djavax.net.ssl.trustStorePassword=\"$TRUSTSTORE_PASS\" \
+    -jar /app/app.jar \
+"]

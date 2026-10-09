@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sms-monitor
+  namespace: sms-monitor
+  annotations:
+    # Contour on TKG uses an IngressClass of "contour". If your cluster uses
+    # nginx instead, change ingressClassName below to "nginx".
+    kubernetes.io/ingress.class: contour
+spec:
+  ingressClassName: contour
+  tls:
+    - hosts:
+        - sms-monitor.ndblk.int           # >>> REPLACE with your host <<<
+      # >>> REPLACE with the TLS secret your cluster already uses.
+      # Find it with: kubectl get secrets -A | grep tls
+      secretName: ndblk-int-tls
+  rules:
+    - host: sms-monitor.ndblk.int          # >>> REPLACE with your host <<<
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sms-monitor
+                port:
+                  number: 80

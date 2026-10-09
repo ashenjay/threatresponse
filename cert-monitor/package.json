@@ -1,0 +1,17 @@
+{
+  "name": "ndb-sms-monitor",
+  "version": "1.0.0",
+  "description": "Lightweight monitor for NDB SMS services: live TLS certificate expiry + service health, with a web dashboard and optional email alerts.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "nodemailer": "^6.9.14"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

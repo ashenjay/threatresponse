@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NDB SMS Services — Monitor</title>
+<style>
+  :root {
+    --bg: #0f1419; --card: #1a2029; --line: #2a333f; --fg: #e6edf3; --muted: #8b949e;
+    --ok: #2ea043; --warn: #d29922; --crit: #f85149; --unknown: #6e7681;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: var(--bg); color: var(--fg); padding: 24px 16px; }
+  header { max-width: 1000px; margin: 0 auto 20px; display: flex; align-items: baseline;
+           justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  h1 { font-size: 20px; margin: 0; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .grid { max-width: 1000px; margin: 0 auto; display: grid; gap: 16px;
+          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .card h2 { font-size: 16px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0;
+         border-top: 1px solid var(--line); font-size: 13px; }
+  .row:first-of-type { border-top: none; }
+  .k { color: var(--muted); }
+  .v { text-align: right; word-break: break-word; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .s-ok { background: var(--ok); } .s-warning { background: var(--warn); }
+  .s-critical, .s-expired, .s-down, .s-unreachable { background: var(--crit); }
+  .s-unknown, .s-skipped, .s-degraded { background: var(--unknown); }
+  .pill.s-ok { color: #fff; } .pill.s-warning { color: #000; }
+  .bundled { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .chain { margin-top: 8px; font-size: 11px; color: var(--muted); }
+  footer { max-width: 1000px; margin: 20px auto 0; color: var(--muted); font-size: 12px; text-align: center; }
+  button { background: #21262d; color: var(--fg); border: 1px solid var(--line);
+           border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { border-color: #4a5568; }
+  .err { color: var(--crit); font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>NDB SMS Services — Monitor</h1>
+    <div class="meta">
+      <span id="updated">loading…</span>
+      &nbsp;<button id="refresh">Refresh now</button>
+    </div>
+  </header>
+  <div class="grid" id="grid"></div>
+  <footer id="footer"></footer>
+
+<script>
+const statusLabel = (s) => ({
+  ok: 'Valid', warning: 'Expiring soon', critical: 'Expiring — act now', expired: 'EXPIRED',
+  unreachable: 'Unreachable', unknown: 'Unknown', up: 'Up', down: 'Down',
+  degraded: 'Degraded', skipped: 'Not checked'
+}[s] || s);
+
+function pill(status) {
+  return `<span class="pill s-${status}">${statusLabel(status)}</span>`;
+}
+function dot(status) { return `<span class="dot s-${status}"></span>`; }
+function row(k, v) { return `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`; }
+
+function renderCert(c) {
+  if (!c.reachable) {
+    return row('Live cert', pill(c.status || 'unreachable')) + row('Error', `<span class="err">${c.error||''}</span>`);
+  }
+  let html = '';
+  html += row('Live cert', pill(c.status));
+  html += row('Subject (CN)', c.subject || '—');
+  html += row('Issuer', c.issuer || '—');
+  html += row('Expires', `${c.validTo || '—'}`);
+  html += row('Days left', c.daysRemaining === null ? '—' : `<b>${c.daysRemaining}</b>`);
+  html += row('Chain trusted', c.authorized ? '✅ yes' : `❌ no${c.authorizationError ? ' — ' + c.authorizationError : ''}`);
+  if (Array.isArray(c.chain) && c.chain.length > 1) {
+    html += '<div class="chain">chain: ' +
+      c.chain.map(n => `${n.subject} (${n.daysRemaining}d)`).join(' → ') + '</div>';
+  }
+  return html;
+}
+
+function renderBundled(list) {
+  if (!list || !list.length) return '';
+  return '<div class="bundled"><b>Bundled files:</b>' + list.map(b =>
+    `<div>${dot(b.status)} ${b.file.split('/').pop()} — ${b.error ? b.error : (b.daysRemaining + 'd, exp ' + b.validTo)}</div>`
+  ).join('') + '</div>';
+}
+
+function renderHealth(h) {
+  if (!h) return row('Health', '—');
+  let extra = '';
+  if (h.httpStatus) extra = ` (HTTP ${h.httpStatus}, ${h.latencyMs}ms)`;
+  else if (h.latencyMs != null) extra = ` (${h.latencyMs}ms)`;
+  if (h.error) extra = ` <span class="err">${h.error}</span>`;
+  return row('Service health', pill(h.status) + extra);
+}
+
+function worst(t) {
+  const order = ['expired','down','unreachable','critical','degraded','warning','unknown','skipped','ok','up'];
+  const vals = [t.cert && t.cert.status, t.health && t.health.status].filter(Boolean);
+  for (const s of order) if (vals.includes(s)) return s;
+  return 'unknown';
+}
+
+async function load(fresh) {
+  document.getElementById('updated').textContent = 'refreshing…';
+  try {
+    const res = await fetch('/api/status' + (fresh ? '?fresh=1' : ''));
+    const data = await res.json();
+    const grid = document.getElementById('grid');
+    grid.innerHTML = (data.targets || []).map(t => `
+      <div class="card">
+        <h2>${dot(worst(t))} ${t.name}</h2>
+        ${row('Endpoint', `${t.host}:${t.port}`)}
+        ${renderHealth(t.health)}
+        ${renderCert(t.cert)}
+        ${renderBundled(t.bundled)}
+      </div>`).join('');
+    document.getElementById('updated').textContent =
+      'Updated ' + new Date(data.generatedAt).toLocaleString();
+    document.getElementById('footer').textContent =
+      `warn < ${data.warnDays}d · critical < ${data.criticalDays}d · config: ${data.config ? data.config.source : '?'} · auto-refresh ${data.config ? data.config.refreshSeconds : '?'}s`;
+    if (data.config && data.config.refreshSeconds) {
+      clearTimeout(window.__t);
+      window.__t = setTimeout(() => load(false), data.config.refreshSeconds * 1000);
+    }
+  } catch (e) {
+    document.getElementById('updated').textContent = 'error loading status';
+  }
+}
+
+document.getElementById('refresh').addEventListener('click', () => load(true));
+load(false);
+</script>
+</body>
+</html>

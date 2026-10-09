@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+config.json
+*.jks
+*.crt
+*.pem
+*.p12
+.git
+.DS_Store

@@ -1,0 +1,30 @@
+{
+  "_comment": "Copy to config.json (or mount at MONITOR_CONFIG). No secrets belong in this file — only hostnames, ports and optional cert file paths. Replace the UAT hosts with production hosts when you promote.",
+  "refreshSeconds": 300,
+  "warnDays": 30,
+  "criticalDays": 7,
+  "alert": {
+    "enabled": false,
+    "throttleHours": 12
+  },
+  "targets": [
+    {
+      "name": "SMSGateway (AWS / ECS)",
+      "host": "REPLACE-ME.ndblk.int",
+      "port": 443,
+      "servername": "REPLACE-ME.ndblk.int",
+      "health": { "type": "https", "port": 443, "path": "/SMSGateway/actuator/health" },
+      "bundledCerts": []
+    },
+    {
+      "name": "NDBSMSRouter (K8s / TKG)",
+      "host": "ndbsmsrouter.ndblk.int",
+      "port": 8085,
+      "servername": "ndbsmsrouter.ndblk.int",
+      "health": { "type": "http", "port": 8085, "path": "/actuator/health" },
+      "bundledCerts": [
+        "/certs/dialog.lk.crt"
+      ]
+    }
+  ]
+}

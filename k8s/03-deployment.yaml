@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sms-monitor
+  namespace: sms-monitor
+  labels:
+    app: sms-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sms-monitor
+  template:
+    metadata:
+      labels:
+        app: sms-monitor
+    spec:
+      containers:
+        - name: sms-monitor
+          # >>> REPLACE with your Harbor path/tag after you push the image. <<<
+          image: harbor.ndblk.int/ndb/sms-monitor:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: MONITOR_CONFIG
+              value: /app/config.json
+            # Alerting (optional). Leave ALERT_ENABLED unset/false to disable.
+            - name: ALERT_ENABLED
+              value: "false"
+          # SMTP creds are pulled from the Secret only if it exists. Safe to
+          # leave this block in even with alerting off.
+          envFrom:
+            - secretRef:
+                name: sms-monitor-smtp
+                optional: true
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.json
+              subPath: config.json
+            # Optional: mount cert files here if you set "bundledCerts" paths.
+            # - name: certs
+            #   mountPath: /certs
+            #   readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "25m", memory: "64Mi" }
+            limits:   { cpu: "200m", memory: "128Mi" }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: config
+          configMap:
+            name: sms-monitor-config
+        # - name: certs
+        #   secret:
+        #     secretName: sms-monitor-certs

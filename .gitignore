@@ -1,0 +1,26 @@
+# --- Secrets & certs: NEVER commit these ---
+*.jks
+*.jks_*
+*.crt
+*.pem
+*.p12
+*.pfx
+*.key
+application.yaml
+application-*.yaml
+k8s/02-secret.yaml
+
+# --- Build artifacts ---
+*.jar
+target/
+target6/
+target7/
+node_modules/
+npm-debug.log*
+
+# --- Local config that may hold hostnames you don't want public ---
+cert-monitor/config.json
+
+# --- Misc ---
+.DS_Store
+*.log

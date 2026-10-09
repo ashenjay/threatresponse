@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sms-monitor
+  namespace: sms-monitor
+  labels:
+    app: sms-monitor
+spec:
+  selector:
+    app: sms-monitor
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
